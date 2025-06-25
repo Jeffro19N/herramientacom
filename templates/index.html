@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet" type="text/css" />
+    <title>Herramienta de Apoyo Computacional</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script>
+        let etiquetasA = [], etiquetasR = [], etiquetasF = [];
+        let fiNominalData = {};  // Almacena valores ingresados en fi_nominal
+        let idf = {};            // Resultado con códigos únicos
+        let idFamilias = [];     // Lista de ID únicos
+        let costoPorKm = 0;      // valor global del parámetro c
+
+        function openPopup() {
+            document.getElementById("dataPopup").style.display = "block";
+        }
+
+        function closePopup() {
+            document.getElementById("dataPopup").style.display = "none";
+        }
+
+        function toggleButtons(id) {
+            let buttons = document.getElementById(id);
+            buttons.style.display = (buttons.style.display === "none") ? "block" : "none";
+        }
+
+        function guardarEtiquetas(ns, nt, nll) {
+            etiquetasA = [], etiquetasR = [], etiquetasF = [];
+            for (let i = 1; i <= ns; i++) etiquetasA.push("A" + i);
+            for (let i = 1; i <= nt; i++) etiquetasR.push("R" + i);
+            for (let i = 1; i <= nll; i++) etiquetasF.push("F" + i);
+
+            document.getElementById("etiquetasContainer").innerHTML = `
+                <h3>Nodos generados</h3>
+                <p><strong>Salidas (A):</strong> ${etiquetasA.join(", ")}</p>
+                <p><strong>Tránsito (R):</strong> ${etiquetasR.join(", ")}</p>
+                <p><strong>Llegadas (F):</strong> ${etiquetasF.join(", ")}</p>
+            `;
+        }
+        function generateACTable() {
+            let acTableContainer = document.getElementById("acTableContainer");
+            acTableContainer.innerHTML = "<h3>Tabla de Costos de acondicionamiento</h3>";
+
+            let table = document.createElement("table");
+            let headerRow = table.insertRow();
+            headerRow.insertCell().textContent = "Nodo";
+            headerRow.insertCell().textContent = "Valor";
+
+            let etiquetasRF = [...etiquetasR, ...etiquetasF];
+
+            etiquetasRF.forEach(etiqueta => {
+                let row = table.insertRow();
+                row.insertCell().textContent = etiqueta;
+                let cell = row.insertCell();
+                let input = document.createElement("input");
+                input.type = "number";
+                input.min = "0";
+                input.step = "any";
+                input.required = true;
+                input.oninput = function () {
+                    if (this.value < 0) {
+                        alert("Ingrese un número positivo");
+                        this.value = "";
+                    }
+                };
+                cell.appendChild(input);
+            });
+
+            acTableContainer.appendChild(table);
+            acTableContainer.style.display = "block";
+        }
+
+        function generateFiNominalInputs(h, ns) {
+            let fiContainer = document.getElementById("fiNominalContainer");
+            fiContainer.innerHTML = "<h3>Tabla de familias en salida</h3>";
+            let table = document.createElement("table");
+            let header = table.insertRow();
+            header.insertCell().textContent = "Miembros de familia";
+            etiquetasA.forEach(a => header.insertCell().textContent = a);
+
+            for (let i = 1; i <= h; i++) {
+                let row = table.insertRow();
+                row.insertCell().textContent = i;
+                etiquetasA.forEach(ns => {
+                    let cell = row.insertCell();
+                    let input = document.createElement("input");
+                    input.type = "number";
+                    input.min = 0;
+                    input.value = 0;
+                    input.dataset.key = `${i},${ns}`;
+                    input.oninput = () => {
+                        fiNominalData[input.dataset.key] = parseInt(input.value) || 0;
+                    };
+                    cell.appendChild(input);
+                });
+            }
+            fiContainer.appendChild(table);
+        }
+
+        function asignarCodigosFamilia() {
+            idf = {}; idFamilias = []; let contador = 1;
+            for (let key in fiNominalData) {
+                const [h, ns] = key.split(',');
+                const valor = fiNominalData[key];
+                if (valor > 0) {
+                    let existente = Object.values(idf).some(entry => entry.h == h && entry.ns == ns && entry.valor == valor);
+                    if (!existente) {
+                        const id = `${contador++}`;
+                        idf[id] = { h, ns, valor };
+                        idFamilias.push(id);
+                    }
+                }
+            }
+            mostrarIDF();
+        }
+
+        function mostrarIDF() {
+            const tabla = document.getElementById("idfContainer");
+            tabla.innerHTML = "<h3>Tabla idf (Asignación de códigos)</h3>";
+            const table = document.createElement("table");
+            const header = table.insertRow();
+            ["ID Familia", "h", "ns", "fi_nominal"].forEach(t => header.insertCell().textContent = t);
+
+            for (let id of idFamilias) {
+                let row = table.insertRow();
+                row.insertCell().textContent = id;
+                row.insertCell().textContent = idf[id].h;
+                row.insertCell().textContent = idf[id].ns;
+                row.insertCell().textContent = idf[id].valor;
+            }
+            tabla.appendChild(table);
+        }
+
+        function validateAndGenerateMatrix() {
+            let ns = parseInt(document.getElementById("ns").value);
+            let nt = parseInt(document.getElementById("nt").value);
+            let nll = parseInt(document.getElementById("nll").value);
+            let h = parseInt(document.getElementById("h").value);
+            let c = parseFloat(document.getElementById("c").value);
+
+            if ([ns, nt, nll, h].some(x => isNaN(x) || x < 1) || isNaN(c) || c < 0) {
+                alert("Ingrese todos los valores numéricos correctamente, incluido el costo por km.");
+                return;
+            }
+
+            costoPorKm = c;
+            guardarEtiquetas(ns, nt, nll);
+            generateACTable();
+            generateFiNominalInputs(h, ns);
+            generarTablaPi();
+
+            
+            document.getElementById("etiquetasContainer").innerHTML += `<p><strong>Costo por km (c):</strong> ${costoPorKm}</p>`;
+
+            let matrixContainer = document.getElementById("matrixContainer");
+            matrixContainer.innerHTML = "<h3>Matriz Distancias</h3>";
+
+            let table = document.createElement("table");
+            let labels = [...etiquetasA, ...etiquetasR, ...etiquetasF];
+
+            let headerRow = table.insertRow();
+            headerRow.insertCell().textContent = "";
+            labels.forEach(label => {
+                let cell = headerRow.insertCell();
+                cell.textContent = label;
+            });
+
+            let matrix = [];
+            for (let rowIdx = 0; rowIdx < labels.length; rowIdx++) {
+                let row = table.insertRow();
+                row.insertCell().textContent = labels[rowIdx];
+                let rowData = [];
+                for (let colIdx = 0; colIdx < labels.length; colIdx++) {
+                    let cell = row.insertCell();
+                    let input = document.createElement("input");
+                    input.type = "number";
+                    input.value = 0;
+                    input.dataset.row = rowIdx;
+                    input.dataset.col = colIdx;
+                    input.onchange = function () {
+                        rowData[colIdx] = parseInt(this.value) || 0;
+                    };
+                    cell.appendChild(input);
+                    rowData.push(0);
+                }
+                matrix.push(rowData);
+            }
+
+            matrixContainer.appendChild(table);
+            matrixContainer.style.display = "block";
+
+            let saveButton = document.createElement("button");
+            saveButton.textContent = "Guardar Matriz y Generar MA";
+            saveButton.onclick = function () {
+                generateMA(matrix, labels);
+            };
+            matrixContainer.appendChild(saveButton);
+        }
+
+        function generateMA(matrix, labels) {
+            let maContainer = document.getElementById("maContainer");
+            maContainer.innerHTML = "<h3>Matriz MA</h3>";
+            let table = document.createElement("table");
+
+            let headerRow = table.insertRow();
+            headerRow.insertCell().textContent = "";
+            labels.forEach(label => {   
+                let cell = headerRow.insertCell();
+                cell.textContent = label;
+            });
+
+            for (let rowIdx = 0; rowIdx < matrix.length; rowIdx++) {
+                let row = table.insertRow();
+                row.insertCell().textContent = labels[rowIdx];
+                for (let colIdx = 0; colIdx < matrix.length; colIdx++) {
+                    let cell = row.insertCell();
+                    cell.textContent = matrix[rowIdx][colIdx] !== 0 ? 1 : 0;
+                }
+            }
+
+            maContainer.appendChild(table);
+            maContainer.style.display = "block";
+        }
+
+        function calcularCapacidadOrigenP() {
+            const container = document.getElementById("capacidadOrigenContainer");
+            container.innerHTML = "<h3>Capacidad máxima en el origen (P de flujo)</h3>";
+
+            // Crear tabla
+            let table = document.createElement("table");
+            let header = table.insertRow();
+            header.insertCell().textContent = "Origen";
+            header.insertCell().textContent = "Capacidad P";
+
+            etiquetasA.forEach(a => {
+                let capacidad = 0;
+
+                for (let id in idf) {
+                    if (idf[id].ns === a) {
+                        const h = parseInt(idf[id].h);
+                        const valor = parseInt(idf[id].valor);
+                        capacidad += h * valor;
+                    }
+                }
+
+                let row = table.insertRow();
+                row.insertCell().textContent = a;
+                let cell = row.insertCell();
+
+                let input = document.createElement("input");
+                input.type = "number";
+                input.min = "0";
+                input.value = capacidad;
+                input.step = "1";
+                cell.appendChild(input);
+            });
+
+            container.appendChild(table);
+        }
+        function calcularTotalesFiNominal() {
+            let totalPersonas = 0;
+            let totalNucleos = 0;
+
+            for (let key in fiNominalData) {
+                const [h, ns] = key.split(",");
+                const cantidad = parseInt(fiNominalData[key]) || 0;
+                const hVal = parseInt(h);
+                totalPersonas += hVal * cantidad;
+                totalNucleos += cantidad;
+            }
+
+            const container = document.getElementById("totalesFiContainer");
+            container.innerHTML = "<h3>Totales fi_nominal</h3>";
+
+            let table = document.createElement("table");
+            let header = table.insertRow();
+            header.insertCell().textContent = "Parámetro";
+            header.insertCell().textContent = "Valor";
+
+            let row1 = table.insertRow();
+            row1.insertCell().textContent = "Total_Personas";
+            row1.insertCell().textContent = totalPersonas;
+
+            let row2 = table.insertRow();
+            row2.insertCell().textContent = "Núcleos Familiares";
+            row2.insertCell().textContent = totalNucleos;
+
+            container.appendChild(table);
+
+            // Tabla para alpha, beta, gamma con valor por defecto = totalPersonas
+            const abcContainer = document.getElementById("paramABCContainer");
+            abcContainer.innerHTML = "<h3>Parámetros α, β, γ</h3>";
+
+            let tableABC = document.createElement("table");
+            let headerABC = tableABC.insertRow();
+            headerABC.insertCell().textContent = "Parámetro";
+            headerABC.insertCell().textContent = "Valor";
+
+            ["alpha", "beta", "gamma"].forEach(param => {
+                let row = tableABC.insertRow();
+                row.insertCell().textContent = param;
+                let cell = row.insertCell();
+                let input = document.createElement("input");
+                input.type = "number";
+                input.min = "0";
+                input.step = "any";
+                input.value = totalPersonas;
+                input.required = true;
+                input.id = param; // para acceder luego si lo necesitas
+                cell.appendChild(input);
+            });
+
+            abcContainer.appendChild(tableABC);
+
+        }
+        function generarTablaPi() {
+            const container = document.getElementById("tablaPiContainer");
+            container.innerHTML = "<h3>Capacidad de nodos de destino</h3>";
+
+            let table = document.createElement("table");
+            let header = table.insertRow();
+            header.insertCell().textContent = "Nodo F";
+            header.insertCell().textContent = "Personas";
+
+            etiquetasF.forEach(f => {
+                let row = table.insertRow();
+                row.insertCell().textContent = f;
+                let cell = row.insertCell();
+                let input = document.createElement("input");
+                input.type = "number";
+                input.min = "0";
+                input.step = "any";
+                input.value = 0;
+                input.required = true;
+                input.id = `pi_${f}`;
+                cell.appendChild(input);
+            });
+
+            container.appendChild(table);
+        }
+        // Función para recolectar todos los datos
+        function recolectarDatos() {
+            // Recolectar datos básicos
+            const datos = {
+                ns: parseInt(document.getElementById("ns").value),
+                nt: parseInt(document.getElementById("nt").value),
+                nll: parseInt(document.getElementById("nll").value),
+                h: parseInt(document.getElementById("h").value),
+                c: parseFloat(document.getElementById("c").value),
+                etiquetasA: etiquetasA,
+                etiquetasR: etiquetasR,
+                etiquetasF: etiquetasF,
+                fiNominalData: fiNominalData,
+                idf: idf,
+                idFamilias: idFamilias,
+                costoPorKm: costoPorKm
+            };
+
+            // Recolectar matriz de distancias
+            const distancias = {};
+            const table = document.querySelector("#matrixContainer table");
+            if (table) {
+                const rows = table.rows;
+                const labels = [...etiquetasA, ...etiquetasR, ...etiquetasF];
+                
+                for (let i = 1; i < rows.length; i++) {
+                    const rowLabel = rows[i].cells[0].textContent;
+                    distancias[rowLabel] = {};
+                    
+                    for (let j = 1; j < rows[i].cells.length; j++) {
+                        const colLabel = rows[0].cells[j].textContent;
+                        const input = rows[i].cells[j].querySelector("input");
+                        distancias[rowLabel][colLabel] = parseInt(input.value) || 0;
+                    }
+                }
+            }
+            datos.distancias = distancias;
+
+            // Recolectar costos de acondicionamiento
+            const ac = {};
+            const acTable = document.querySelector("#acTableContainer table");
+            if (acTable) {
+                const acRows = acTable.rows;
+                for (let i = 1; i < acRows.length; i++) {
+                    const nodo = acRows[i].cells[0].textContent;
+                    const valor = acRows[i].cells[1].querySelector("input").value;
+                    ac[nodo] = parseFloat(valor) || 0;
+                }
+            }
+            datos.ac = ac;
+
+            // Recolectar parámetros alpha, beta, gamma
+            datos.alpha = document.getElementById("alpha") ? parseFloat(document.getElementById("alpha").value) : 0;
+            datos.beta = document.getElementById("beta") ? parseFloat(document.getElementById("beta").value) : 0;
+            datos.gamma = document.getElementById("gamma") ? parseFloat(document.getElementById("gamma").value) : 0;
+
+            // Recolectar valores pi (capacidad de nodos de destino)
+            const pi = {};
+            etiquetasF.forEach(f => {
+                const input = document.getElementById(`pi_${f}`);
+                if (input) {
+                    pi[f] = parseFloat(input.value) || 0;
+                }
+            });
+            datos.pi = pi;
+
+            return datos;
+        }
+
+        // Función para guardar datos en el backend
+        async function guardarDatos() {
+            try {
+                const datos = recolectarDatos();
+                
+                const response = await fetch("/guardar_datos", {
+                    method: "POST",
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(datos)
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === "success") {
+                    alert("Datos guardados correctamente");
+                } else {
+                    alert("Error al guardar: " + result.message);
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                alert("Error al guardar los datos: " + error.message);
+            }
+        }
+
+        // Función para cargar datos guardados
+        async function cargarDatos() {
+            try {
+                const response = await fetch("/cargar_datos");
+                const result = await response.json();
+                
+                if (result.status === "success" && result.data) {
+                    // Aquí puedes implementar la lógica para cargar los datos en la interfaz
+                    alert("Datos cargados correctamente");
+                    console.log("Datos cargados:", result.data);
+                    // Implementa la lógica para poblar los campos con los datos cargados
+                } else {
+                    alert("No hay datos guardados o ocurrió un error");
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                alert("Error al cargar los datos: " + error.message);
+            }
+        }
+        async function ejecutarOptimizacion() {
+            try {
+                const response = await fetch("/ejecutar_optimizacion");
+                const result = await response.json();
+                
+                if (result.status === "success") {
+                    mostrarResultados(result.resultados);
+                } else {
+                    alert("Error al ejecutar optimización: " + result.message);
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                alert("Error al ejecutar la optimización: " + error.message);
+            }
+        }
+
+        async function cargarResultados() {
+            try {
+                const response = await fetch("/cargar_resultados");
+                const result = await response.json();
+                
+                if (result.status === "success" && result.data) {
+                    mostrarResultados(result.data);
+                } else {
+                    alert("No hay resultados guardados o ocurrió un error");
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                alert("Error al cargar los resultados: " + error.message);
+            }
+        }
+
+        function mostrarResultados(resultados) {
+            const container = document.getElementById("resultadosContainer");
+            if (!container) {
+                // Crear contenedor si no existe
+                const newContainer = document.createElement("div");
+                newContainer.id = "resultadosContainer";
+                newContainer.style.marginTop = "20px";
+                document.body.appendChild(newContainer);
+                mostrarResultados(resultados); // Llamar recursivamente
+                return;
+            }
+
+            container.innerHTML = "<h2>Resultados de la Optimización</h2>";
+            
+            // Estado y valor objetivo
+            container.innerHTML += `
+                <p><strong>Estado:</strong> ${resultados.status}</p>
+                <p><strong>Valor objetivo:</strong> ${resultados.valor_objetivo}</p>
+            `;
+            
+            // Mostrar reporte de rutas si existe y es óptimo
+            if (resultados.reporte_rutas && resultados.status === "Optimal") {
+                container.innerHTML += `<h3>Reporte Detallado de Rutas</h3>`;
+                
+                // Agrupar rutas similares
+                const rutasAgrupadas = {};
+                resultados.reporte_rutas.forEach(ruta => {
+                    const key = `${ruta.id_familia}_${ruta.tamaño_familia}_${ruta.ruta_str}`;
+                    if (!rutasAgrupadas[key]) {
+                        rutasAgrupadas[key] = {
+                            id_familia: ruta.id_familia,
+                            tamaño_familia: ruta.tamaño_familia,
+                            ruta_str: ruta.ruta_str,
+                            num_nodos_ruta: ruta.num_nodos_ruta,
+                            personas_en_ruta: 0,
+                            distancia: ruta.distancia,
+                            familias_en_ruta: 0
+                        };
+                    }
+                    rutasAgrupadas[key].personas_en_ruta += ruta.personas_en_ruta;
+                    rutasAgrupadas[key].familias_en_ruta += ruta.familias_en_ruta;
+                });
+                
+                // Crear tabla
+                const table = document.createElement("table");
+                table.style.width = "100%";
+                table.style.border = "1px solid black";
+                table.style.borderCollapse = "collapse";
+                table.style.margin = "10px 0";
+                
+                // Encabezados
+                const header = table.insertRow();
+                ["ID Familia", "Tamaño Familia", "Familias", "Personas", "Ruta Principal", "Nodos Ruta",
+                 "Distancia"].forEach(text => {
+                    const th = document.createElement("th");
+                    th.textContent = text;
+                    th.style.border = "1px solid black";
+                    th.style.padding = "8px";
+                    th.style.textAlign = "center";
+                    header.appendChild(th);
+                });
+                
+                // Ordenar las rutas
+                const rutasOrdenadas = Object.values(rutasAgrupadas).sort((a, b) => {
+                    return a.id_familia - b.id_familia || 
+                        a.tamaño_familia - b.tamaño_familia || 
+                        a.ruta_str.localeCompare(b.ruta_str);
+                });
+                
+                // Añadir filas con datos
+                rutasOrdenadas.forEach(ruta => {
+                    const row = table.insertRow();
+                    
+                    // ID Familia
+                    let cell = row.insertCell();
+                    cell.textContent = ruta.id_familia;
+                    cell.style.border = "1px solid black";
+                    cell.style.padding = "6px";
+                    cell.style.textAlign = "center";
+                    
+                    // Tamaño Familia
+                    cell = row.insertCell();
+                    cell.textContent = ruta.tamaño_familia;
+                    cell.style.border = "1px solid black";
+                    cell.style.padding = "6px";
+                    cell.style.textAlign = "center";
+                    
+                    // Familias
+                    cell = row.insertCell();
+                    cell.textContent = ruta.familias_en_ruta;
+                    cell.style.border = "1px solid black";
+                    cell.style.padding = "6px";
+                    cell.style.textAlign = "center";
+
+                    // Personas
+                    cell = row.insertCell();
+                    cell.textContent = ruta.personas_en_ruta;
+                    cell.style.border = "1px solid black";
+                    cell.style.padding = "6px";
+                    cell.style.textAlign = "center";
+
+                    // Ruta Principal
+                    cell = row.insertCell();
+                    cell.textContent = ruta.ruta_str;
+                    cell.style.border = "1px solid black";
+                    cell.style.padding = "6px";
+
+                    // Nodos Ruta
+                    cell = row.insertCell();
+                    cell.textContent = ruta.num_nodos_ruta;
+                    cell.style.border = "1px solid black";
+                    cell.style.padding = "6px";
+                    cell.style.textAlign = "center";
+                    
+                    
+                    // Distancia
+                    cell = row.insertCell();
+                    cell.textContent = ruta.distancia.toFixed(2);
+                    cell.style.border = "1px solid black";
+                    cell.style.padding = "6px";
+                    cell.style.textAlign = "center";
+                    
+                });
+                
+                container.appendChild(table);
+                
+                // Mostrar totales
+                const totalPersonas = rutasOrdenadas.reduce((sum, r) => sum + r.personas_en_ruta, 0);
+                const totalFamilias = rutasOrdenadas.reduce((sum, r) => sum + r.familias_en_ruta, 0);
+                
+                container.innerHTML += `
+                    <div style="margin-top: 20px;">
+                        <p><strong>Total personas evacuadas:</strong> ${totalPersonas}</p>
+                        <p><strong>Total familias evacuadas:</strong> ${totalFamilias}</p>
+                    </div>
+                `;
+            } else if (resultados.reporte_rutas) {
+                container.innerHTML += `<p>No se encontraron rutas óptimas. Estado: ${resultados.status}</p>`;
+            }
+            
+            // Nodos activados
+            container.innerHTML += `<h3>Nodos Activados (Y):</h3>`;
+            if (resultados.resumen.nodos_activados.length > 0) {
+                container.innerHTML += `<ul>${resultados.resumen.nodos_activados.map(n => `<li>${n}</li>`).join('')}</ul>`;
+            } else {
+                container.innerHTML += `<p>No se activaron nodos</p>`;
+            }
+            
+            // Resumen por familia
+            container.innerHTML += `<h3>Flujos por Familia:</h3>`;
+            for (const [id, familia] of Object.entries(resultados.resumen.flujos_por_familia)) {
+                container.innerHTML += `
+                    <div style="margin-bottom: 15px; border: 1px solid #ccc; padding: 10px;">
+                        <p><strong>Familia ${id}</strong> (Tamaño: ${familia.tamaño_familia}, Origen: ${familia.origen})</p>
+                        <table border="1" style="width: 100%; margin-top: 5px;">
+                            <tr>
+                                <th>Desde</th>
+                                <th>Hacia</th>
+                                <th>Familias</th>
+                                <th>Personas</th>
+                            </tr>
+                            ${familia.flujos.map(f => `
+                                <tr>
+                                    <td>${f.desde}</td>
+                                    <td>${f.hacia}</td>
+                                    <td>${f.cantidad}</td>
+                                    <td>${f.personas}</td>
+                                </tr>
+                            `).join('')}
+                        </table>
+                    </div>
+                `;
+            }
+            
+            // Botón para ver detalles completos
+            const detallesBtn = document.createElement("button");
+            detallesBtn.textContent = "Ver Detalles Completos";
+            detallesBtn.onclick = () => mostrarDetallesCompletos(resultados);
+            container.appendChild(detallesBtn);
+        }
+
+        function mostrarDetallesCompletos(resultados) {
+            const popup = document.createElement("div");
+            popup.style.position = "fixed";
+            popup.style.top = "50%";
+            popup.style.left = "50%";
+            popup.style.transform = "translate(-50%, -50%)";
+            popup.style.backgroundColor = "white";
+            popup.style.padding = "20px";
+            popup.style.border = "2px solid black";
+            popup.style.zIndex = "1000";
+            popup.style.maxHeight = "80vh";
+            popup.style.overflowY = "auto";
+            popup.style.width = "80%";
+            
+            popup.innerHTML = `
+                <h2>Detalles Completos de la Optimización</h2>
+                <button onclick="this.parentNode.remove()" style="float: right;">Cerrar</button>
+                <pre>${JSON.stringify(resultados, null, 2)}</pre>
+            `;
+            
+            document.body.appendChild(popup);
+        }
+        function descargarReporteRutasCSV() {
+            fetch("/cargar_resultados")
+                .then(response => response.json())
+                .then(result => {
+                    if (result.status === "success" && result.data?.reporte_rutas?.length) {
+                        // 1. Encabezados con separación clara
+                        const headers = [
+                            'ID Familia',
+                            'Tamaño Familia',
+                            'Nodos en Ruta',
+                            'Origen',
+                            'Destino',
+                            'Ruta Completa',
+                            'Total Personas',
+                            'Distancia (km)',
+                            'Familias en Ruta'
+                        ];
+
+                        // 2. Procesamiento robusto de datos
+                        const rows = result.data.reporte_rutas.map(item => {
+                            const rutaParts = item.ruta_str?.split('->') || [];
+                            return [
+                                item.id_familia || '',
+                                item.tamaño_familia || '',
+                                item.num_nodos_ruta || '',
+                                rutaParts[0] || '',  // Origen
+                                rutaParts[rutaParts.length - 1] || '',  // Destino
+                                item.ruta_str || '',  // Ruta completa
+                                item.personas_en_ruta || 0,
+                                Number(item.distancia || 0).toFixed(2),
+                                item.familias_en_ruta || 0
+                            ];
+                        });
+
+                        // 3. Generar CSV con formato perfecto para Excel
+                        let csvContent = "\uFEFF"; // BOM para UTF-8
+                        
+                        // Agregar encabezados
+                        csvContent += headers.map(h => `"${h}"`).join(';') + '\r\n';
+                        
+                        // Agregar filas con formato
+                        rows.forEach(row => {
+                            csvContent += row.map(cell => {
+                                // Escapar comillas y formatear adecuadamente
+                                if (typeof cell === 'string' && cell.includes('"')) {
+                                    return `"${cell.replace(/"/g, '""')}"`;
+                                }
+                                return `"${cell}"`;
+                            }).join(';') + '\r\n';
+                        });
+
+                        // 4. Descarga con tipo MIME específico
+                        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `Reporte_Rutas_${new Date().toISOString().slice(0,10)}.csv`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        setTimeout(() => URL.revokeObjectURL(url), 100);
+                    } else {
+                        alert("No se encontraron datos válidos para generar el reporte");
+                    }
+                })
+                .catch(error => {
+                    console.error("Error:", error);
+                    alert(`Error al generar CSV: ${error.message}`);
+                });
+        }
+
+        // Variables globales para las redes
+let redEstatica, redDinamica;
+let datosGrafoDinamico = { nodos: [], aristas: [] };
+
+// Función para inicializar los grafos
+async function inicializarGrafos() {
+    try {
+        const response = await fetch("/obtener_datos_grafo");
+        const result = await response.json();
+        
+        if (result.status === "success" && result.grafo_estatico) {
+            // Crear grafo estático
+            crearGrafoEstatico(result.grafo_estatico);
+            
+            // Crear grafo dinámico
+            crearGrafoDinamico(result.grafo_dinamico);
+        }
+    } catch (error) {
+        console.error("Error al cargar datos para grafos:", error);
+    }
+}
+
+// Función para crear el grafo estático
+function crearGrafoEstatico(datos) {
+    const contenedor = document.getElementById('grafoEstatico');
+    
+    // Crear nodos
+    const nodes = new vis.DataSet();
+    
+    // Nodos de salida (izquierda)
+    datos.nodos.salida.forEach((nodo, i) => {
+        nodes.add({
+            id: nodo,
+            label: nodo,
+            group: 'salida',
+            x: -500 + (i * 100),
+            y: -200 + (i * 100),
+            color: { background: '#FF6B6B', border: '#FF0000' }
+        });
+    });
+    
+    // Nodos de tránsito (centro)
+    datos.nodos.transito.forEach((nodo, i) => {
+        nodes.add({
+            id: nodo,
+            label: nodo,
+            group: 'transito',
+            x: 0 + (i * 50),
+            y: 0 + (i * 50),
+            color: { background: '#4ECDC4', border: '#00A8A8' }
+        });
+    });
+    
+    // Nodos de llegada (derecha)
+    datos.nodos.llegada.forEach((nodo, i) => {
+        nodes.add({
+            id: nodo,
+            label: nodo,
+            group: 'llegada',
+            x: 500 + (i * 100),
+            y: -200 + (i * 100),
+            color: { background: '#77DD77', border: '#00AA00' }
+        });
+    });
+    
+    // Crear aristas
+    const edges = new vis.DataSet();
+    for (const origen in datos.conexiones) {
+        for (const destino in datos.conexiones[origen]) {
+            const distancia = datos.conexiones[origen][destino];
+            if (distancia > 0) {
+                edges.add({
+                    from: origen,
+                    to: destino,
+                    label: distancia.toString(),
+                    arrows: 'to',
+                    smooth: { type: 'curvedCW', roundness: 0.2 }
+                });
+            }
+        }
+    }
+    
+    // Configuración del grafo
+    const data = { nodes, edges };
+    const options = {
+        layout: {
+            hierarchical: {
+                direction: 'LR',
+                sortMethod: 'directed',
+                nodeSpacing: 150,
+                levelSeparation: 150
+            }
+        },
+        physics: {
+            hierarchicalRepulsion: {
+                nodeDistance: 200
+            },
+            solver: 'hierarchicalRepulsion'
+        },
+        edges: {
+            font: { size: 12, align: 'middle' },
+            arrowStrikethrough: false,
+            color: { color: '#2B7CE9', highlight: '#FF7F00' }
+        },
+        nodes: {
+            shape: 'box',
+            margin: 10,
+            font: { size: 14 },
+            borderWidth: 2,
+            shadow: true
+        },
+        groups: {
+            salida: { color: { background: '#FF6B6B', border: '#FF0000' } },
+            transito: { color: { background: '#4ECDC4', border: '#00A8A8' } },
+            llegada: { color: { background: '#77DD77', border: '#00AA00' } }
+        }
+    };
+    
+    redEstatica = new vis.Network(contenedor, data, options);
+}
+
+// Función para crear el grafo dinámico
+function crearGrafoDinamico(datos) {
+    const contenedor = document.getElementById('grafoDinamico');
+    const controles = document.getElementById('controlesGrafo');
+    const selectRuta = document.getElementById('selectRuta');
+    
+    // Limpiar select de rutas
+    selectRuta.innerHTML = '<option value="">-- Todas las rutas --</option>';
+    
+    // Crear nodos
+    const nodes = new vis.DataSet();
+    
+    // Nodos de salida (izquierda)
+    datos.nodos.salida.forEach((nodo, i) => {
+        nodes.add({
+            id: nodo,
+            label: nodo,
+            group: 'salida',
+            x: -500 + (i * 100),
+            y: -200 + (i * 100),
+            color: { background: '#FF6B6B', border: '#FF0000' }
+        });
+    });
+    
+    // Nodos de tránsito (centro)
+    datos.nodos.transito.forEach((nodo, i) => {
+        nodes.add({
+            id: nodo,
+            label: nodo,
+            group: 'transito',
+            x: 0 + (i * 50),
+            y: 0 + (i * 50),
+            color: { background: '#4ECDC4', border: '#00A8A8' }
+        });
+    });
+    
+    // Nodos de llegada (derecha)
+    datos.nodos.llegada.forEach((nodo, i) => {
+        nodes.add({
+            id: nodo,
+            label: nodo,
+            group: 'llegada',
+            x: 500 + (i * 100),
+            y: -200 + (i * 100),
+            color: { background: '#77DD77', border: '#00AA00' }
+        });
+    });
+    
+    // Crear aristas
+    const edges = new vis.DataSet();
+    for (const origen in datos.conexiones) {
+        for (const destino in datos.conexiones[origen]) {
+            const distancia = datos.conexiones[origen][destino];
+            if (distancia > 0) {
+                edges.add({
+                    from: origen,
+                    to: destino,
+                    label: distancia.toString(),
+                    arrows: 'to',
+                    smooth: { type: 'curvedCW', roundness: 0.2 },
+                    color: { color: '#CCCCCC', highlight: '#FF7F00' },
+                    width: 1,
+                    hidden: false
+                });
+            }
+        }
+    }
+    
+    // Guardar datos para manipulación dinámica
+    datosGrafoDinamico.nodos = nodes.get();
+    datosGrafoDinamico.aristas = edges.get();
+    
+    // Configuración del grafo
+    const data = { nodes, edges };
+    const options = {
+        layout: {
+            hierarchical: {
+                direction: 'LR',
+                sortMethod: 'directed',
+                nodeSpacing: 150,
+                levelSeparation: 150
+            }
+        },
+        physics: {
+            hierarchicalRepulsion: {
+                nodeDistance: 200
+            },
+            solver: 'hierarchicalRepulsion'
+        },
+        edges: {
+            font: { size: 12, align: 'middle' },
+            arrowStrikethrough: false,
+            color: { color: '#CCCCCC', highlight: '#FF7F00' }
+        },
+        nodes: {
+            shape: 'box',
+            margin: 10,
+            font: { size: 14 },
+            borderWidth: 2,
+            shadow: true
+        },
+        groups: {
+            salida: { color: { background: '#FF6B6B', border: '#FF0000' } },
+            transito: { color: { background: '#4ECDC4', border: '#00A8A8' } },
+            llegada: { color: { background: '#77DD77', border: '#00AA00' } }
+        }
+    };
+    
+    redDinamica = new vis.Network(contenedor, data, options);
+    
+    // Si hay rutas, mostramos el selector
+    if (datos.rutas && datos.rutas.length > 0) {
+        controles.style.display = 'block';
+        
+        // Agrupar rutas por id_familia y ruta_str
+        const rutasUnicas = {};
+        datos.rutas.forEach(ruta => {
+            const key = `${ruta.id_familia}_${ruta.ruta_str}`;
+            if (!rutasUnicas[key]) {
+                rutasUnicas[key] = ruta;
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = `Familia ${ruta.id_familia} (${ruta.ruta_str}) - ${ruta.personas_en_ruta} personas`;
+                selectRuta.appendChild(option);
+            }
+        });
+    } else {
+        controles.style.display = 'none';
+    }
+}
+
+// Función para resaltar una ruta específica
+function resaltarRuta(rutaKey) {
+    if (!rutaKey) {
+        // Mostrar todas las aristas con color gris
+        const nuevasAristas = datosGrafoDinamico.aristas.map(arista => ({
+            ...arista,
+            color: { color: '#CCCCCC', highlight: '#FF7F00' },
+            width: 1,
+            hidden: false
+        }));
+        
+        redDinamica.setData({
+            nodes: new vis.DataSet(datosGrafoDinamico.nodos),
+            edges: new vis.DataSet(nuevasAristas)
+        });
+        return;
+    }
+    
+    // Obtener la ruta seleccionada
+    const [idFamilia, ...rutaParts] = rutaKey.split('_');
+    const rutaStr = rutaParts.join('_');
+    const nodosRuta = rutaStr.split('->');
+    
+    // Crear nuevas aristas resaltando la ruta seleccionada
+    const nuevasAristas = datosGrafoDinamico.aristas.map(arista => {
+        let encontrada = false;
+        
+        // Verificar si esta arista está en la ruta seleccionada
+        for (let i = 0; i < nodosRuta.length - 1; i++) {
+            if (arista.from === nodosRuta[i] && arista.to === nodosRuta[i + 1]) {
+                encontrada = true;
+                break;
+            }
+        }
+        
+        return {
+            ...arista,
+            color: encontrada ? { color: '#FF0000', highlight: '#FF4500' } : { color: '#CCCCCC', highlight: '#FF7F00' },
+            width: encontrada ? 3 : 1,
+            hidden: false
+        };
+    });
+    
+    redDinamica.setData({
+        nodes: new vis.DataSet(datosGrafoDinamico.nodos),
+        edges: new vis.DataSet(nuevasAristas)
+    });
+    
+    // Centrar la vista en la ruta seleccionada
+    redDinamica.fit({
+        nodes: nodosRuta,
+        animation: { duration: 1000, easingFunction: 'easeInOutQuad' }
+    });
+}
+
+// Llamar a inicializarGrafos cuando la página cargue
+document.addEventListener('DOMContentLoaded', inicializarGrafos);
+
+// También llamar cuando se ejecuta la optimización
+async function ejecutarOptimizacion() {
+    try {
+        const response = await fetch("/ejecutar_optimizacion");
+        const result = await response.json();
+        
+        if (result.status === "success") {
+            mostrarResultados(result.resultados);
+            // Actualizar los grafos con los nuevos resultados
+            inicializarGrafos();
+        } else {
+            alert("Error al ejecutar optimización: " + result.message);
+        }
+    } catch (error) {
+        console.error("Error:", error);
+        alert("Error al ejecutar la optimización: " + error.message);
+    }
+}
+    </script>
+</head>
+<body>
+
+    <h1>Herramienta de Apoyo Computacional</h1>
+    <h2>Tesis Doctoral: Modelos de Optimización matemática para el manejo de emergencias metereológicas en presencia de incertidumbre</h2>
+    <h2>Universidad de La Habana, Cuba</h2>
+    <h2>Doctorando: Msc. Yasmany Fernández Fernández</h2>
+
+    <button onclick="openPopup()">Preparación de Datos</button>
+    <div id="etiquetasContainer" style="margin-top: 10px;"></div>
+    
+
+    <div id="dataPopup" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border: 2px solid black; z-index: 1000;">
+        <h3>Ingrese los datos</h3>
+        <label for="ns">Número de puntos de salida:</label>
+        <input type="number" id="ns" min="1" placeholder="Ingrese cantidad" required>
+        <br>
+        <label for="nt">Número de puntos de tránsito:</label>
+        <input type="number" id="nt" min="1" placeholder="Ingrese cantidad" required>
+        <br>
+        <label for="nll">Número de puntos de llegada:</label>
+        <input type="number" id="nll" min="1" placeholder="Ingrese cantidad" required>
+        <br>
+        <label for="h">Tamaño máximo de núcleo familiares:</label>
+        <input type="number" id="h" min="1" placeholder="Ingrese cantidad" required>
+        <br>
+        <label for="c">Costo por km (c):</label>
+        <input type="number" id="c" min="0" step="any" placeholder="Ej: 0.36" required>
+        <br>
+        <button onclick="validateAndGenerateMatrix(); closePopup();">Validar y Guardar</button>
+        <button onclick="closePopup()">Cerrar</button>
+    </div>
+    
+    <div id="matrixContainer" style="display: none;"></div>
+    <div id="maContainer" style="display: none;"></div>
+    <div id="acTableContainer" style="display: none;"></div>
+    <div id="tablaPiContainer" style="margin-top: 20px;"></div>
+    <div id="fiNominalContainer" style="margin-top: 20px;"></div>
+    <button onclick="asignarCodigosFamilia()">Asignar códigos familiares</button>
+    <button onclick="calcularCapacidadOrigenP()">Calcular Capacidad P</button>
+    <button onclick="calcularTotalesFiNominal()">Calcular Totales fi_nominal</button>
+    <div id="idfContainer" style="margin-top: 20px;"></div>
+    <div id="capacidadOrigenContainer" style="margin-top: 20px;"></div>
+    <div id="totalesFiContainer" style="margin-top: 20px;"></div>
+    <div id="paramABCContainer" style="margin-top: 20px;"></div>
+
+    <div style="margin: 20px 0;">
+    <button onclick="guardarDatos()">Guardar Datos</button>
+    <button onclick="cargarDatos()">Cargar Datos Guardados</button>
+    </div>
+
+    
+    <div style="margin: 20px 0;">
+    <button onclick="ejecutarOptimizacion()">Ejecutar Optimización</button>
+    <button onclick="cargarResultados()">Cargar Resultados</button>
+    <button onclick="descargarReporteRutasCSV()">Descargar Reporte de Rutas</button>
+    </div>
+    <div id="resultadosContainer"></div>
+
+    <div style="display: flex; flex-direction: column; margin-top: 30px;">
+    <h2>Visualización de Grafos</h2>
+    
+    <div style="display: flex; justify-content: space-around; flex-wrap: wrap;">
+        <div style="width: 48%; min-width: 400px; height: 500px; border: 1px solid #ccc; margin-bottom: 20px;">
+            <h3>Grafo Estático (Red Completa)</h3>
+            <div id="grafoEstatico" style="width: 100%; height: 450px;"></div>
+        </div>
+        
+        <div style="width: 48%; min-width: 400px; height: 500px; border: 1px solid #ccc; margin-bottom: 20px;">
+            <h3>Grafo Dinámico (Rutas Óptimas)</h3>
+            <div id="grafoDinamico" style="width: 100%; height: 450px;"></div>
+            <div id="controlesGrafo" style="margin-top: 10px; display: none;">
+                <label for="selectRuta">Seleccionar ruta: </label>
+                <select id="selectRuta" onchange="resaltarRuta(this.value)">
+                    <option value="">-- Todas las rutas --</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+     <!-- Sección de enfoques -->
+        <section class="section">
+            <div class="button-group">
+                <button onclick="toggleButtons('DeterministaButtons')">Enfoque Determinista - Dos fases</button>
+                <div id="DeterministaButtons" style="display: none;">
+                    <button onclick="">Fase 1 - Ejecutar Modelo</button>
+                    <button onclick="window.open('https://code.visualstudio.com', '_blank')">Fase 2</button>
+                </div>
+                
+                <button onclick="toggleButtons('EstocasticoButtons')">Enfoque Estocástico - Dos fases</button>
+                <div id="EstocasticoButtons" style="display: none;">
+                    <button onclick="window.open('https://www.python.org', '_blank')">Fase 1</button>
+                    <button onclick="window.open('https://code.visualstudio.com', '_blank')">Fase 2</button>
+                </div>
+                
+                <button onclick="toggleButtons('RobustoButtons')">Enfoque Robusto - Dos fases</button>
+                <div id="RobustoButtons" style="display: none;">
+                    <button onclick="window.open('https://www.python.org', '_blank')">Fase 1</button>
+                    <button onclick="window.open('https://code.visualstudio.com', '_blank')">Fase 2</button>
+                </div>
+                
+                <button onclick="toggleButtons('GeneralButtons')">Modelo General</button>
+            </div>
+        </section>
+    <footer>@copyright Open Source License</footer>
+
+</body>
+</html>
