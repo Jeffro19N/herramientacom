@@ -1,6 +1,6 @@
 ## Autores
 - [Yasmany Fernández Fernández](https://github.com/yasmaforever85) 
-- [Jefferson Narváez](https://github.com/Jeffro19N)
+- [Jefferson Iván Narváez Quendi](https://github.com/Jeffro19N)
 - [Sira M. Allende Alonso]
 - [Ridelio Miranda Pérez]
 
