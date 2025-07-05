@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Yasmany Fernández Fernández y Jefferson Narváez
+# Copyright (c) 2023 Yasmany Fernández Fernández, Jefferson Iván Narváez Quendi, Sira M. Allende Alonso, Ridelio Miranda Pérez
 # Licencia MIT - Ver archivo LICENSE para detalles
 import json
 from pulp import LpProblem, LpMinimize, LpVariable, lpSum, LpBinary, LpInteger, LpStatus
