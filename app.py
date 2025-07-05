@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Yasmany Fernández Fernández, Jefferson Iván Narváez Quendi, Sira M. Allende Alonso, Ridelio Miranda Pérez
+# Copyright (c) 2025 Yasmany Fernández Fernández, Jefferson Iván Narváez Quendi, Sira M. Allende Alonso, Ridelio Miranda Pérez
 # Licencia MIT - Ver archivo LICENSE para detalles
 from flask import Flask, request, jsonify, render_template
 import json
