@@ -1,6 +1,8 @@
 ## Autores
 - [Yasmany Fernández Fernández](https://github.com/yasmaforever85) 
-- [Jefferson Narváez](https://github.com/Jeffro19N) 
+- [Jefferson Narváez](https://github.com/Jeffro19N)
+- [Sira M. Allende Alonso]
+- [Ridelio Miranda Pérez]
 
 # 🚀 Aplicación de Optimización para Emergencias 
 
